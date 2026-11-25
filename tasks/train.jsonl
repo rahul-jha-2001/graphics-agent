@@ -1,0 +1,1 @@
+{"task_id": "square", "prompt": "Move a red square horizontally from left to right.", "constraints": {"width": 512, "height": 512, "fps": 30, "duration": 2}, "reference_lottie": "references/square.json", "split": "train", "metadata": {"license": "CC0-1.0", "permitted_use": "Training and evaluation", "origin": "Project-authored synthetic example"}}

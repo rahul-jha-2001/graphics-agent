@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "graphics-agent"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = ["PyYAML==6.0.3", "jsonschema==4.25.1", "Pillow==13.0.0"]
+
+[project.optional-dependencies]
+inference = ["mini-swe-agent==2.4.6", "vllm==0.33.0", "transformers==5.20.0", "torch==2.14.0"]
+training = ["trl[vllm]==1.18.2", "peft==0.22.0", "vllm==0.33.0", "transformers==5.20.0", "torch==2.14.0"]
+
+[project.scripts]
+graphics-agent = "graphics_agent.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["graphics_agent*"]

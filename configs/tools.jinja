@@ -1,0 +1,25 @@
+{%- macro body(content) -%}
+{%- if content is string -%}{{ content }}
+{%- elif content is iterable -%}
+{%- for part in content if part.type == 'text' -%}{{ part.text }}{%- endfor -%}
+{%- endif -%}
+{%- endmacro -%}
+{%- for msg in messages -%}
+{{- '<|im_start|>' + ('user' if msg.role == 'tool' else msg.role) + '\n' -}}
+{%- if msg.role == 'tool' -%}{{- '<tool_response>\n' -}}{%- endif -%}
+{{- body(msg.content) -}}
+{%- if msg.role == 'system' and tools -%}
+{{- '\nUse the following tools. Return each call as <tool_call>{"name":"...","arguments":{...}}</tool_call>.\n<tools>\n' -}}
+{%- for tool in tools -%}{{- tool | tojson -}}{{- '\n' -}}{%- endfor -%}
+{{- '</tools>' -}}
+{%- endif -%}
+{%- for call in msg.tool_calls | default([]) -%}
+{{- '<tool_call>\n{"name":' -}}{{- call.function.name | tojson -}}{{- ',"arguments":' -}}
+{%- if call.function.arguments is string -%}{{- call.function.arguments -}}
+{%- else -%}{{- call.function.arguments | tojson -}}{%- endif -%}
+{{- '}\n</tool_call>' -}}
+{%- endfor -%}
+{%- if msg.role == 'tool' -%}{{- '\n</tool_response>' -}}{%- endif -%}
+{{- '<|im_end|>\n' -}}
+{%- endfor -%}
+{%- if add_generation_prompt -%}{{- '<|im_start|>assistant\n' -}}{%- endif -%}

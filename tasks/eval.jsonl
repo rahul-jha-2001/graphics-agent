@@ -1,0 +1,1 @@
+{"task_id": "circle", "prompt": "Move a blue circle vertically from top to bottom.", "constraints": {"width": 512, "height": 512, "fps": 30, "duration": 2}, "reference_lottie": "references/circle.json", "split": "eval", "metadata": {"license": "CC0-1.0", "permitted_use": "Training and evaluation", "origin": "Project-authored synthetic example"}}
