@@ -13,12 +13,25 @@ import jsonschema
 
 from graphics_agent.common.io import MAX_BYTES, ROOT, binary, digest, dump, read_json, run_root
 from graphics_agent.environments.effectcraft.session import Engine
+from graphics_agent.harness.agent import skill_text
 from graphics_agent.tasks.lottie.grade import grade
 
 COMMANDS = {"comp.new", "layer.newText", "layer.newShape", "layer.newSolid", "shape.newPath",
             "shape.newShape", "shape.fillStroke", "layer.select", "time.set"}
 TOOLS = {"describe_command", "execute_command", "get_comp", "get_layer", "get_property",
          "set_property", "add_keyframe", "undo", "redo"}
+
+
+def unknown_action(name):
+    """Corrective message for a bad action name: say what the call should have looked like."""
+    if name in COMMANDS:
+        return (f"'{name}' is a command ID, not an action. Call name=\"execute_command\" with "
+                f'arguments="{{\\"command\\":\\"{name}\\",\\"params\\":{{...}}}}".')
+    if name == "effectcraft":
+        return ("Do not nest effectcraft. Put the action itself in name (for example \"add_keyframe\") "
+                "and its JSON object, as a string, in arguments.")
+    return (f"Unknown action '{name}'. Valid actions: " + ", ".join(sorted(TOOLS | {"catalog", "schema", "reference"}))
+            + ". Command IDs such as comp.new go inside execute_command.")
 
 
 def cli(*args, cwd):
@@ -45,6 +58,7 @@ class Rollout:
         self.outcome = None
         self.manifest = {"skill_sha256": digest(ROOT / cfg["harness"]["skill"]),
                          "template_sha256": digest(ROOT / "configs/tools.jinja"), "config": cfg, "split": task.split, "metadata": task.metadata}
+        self.manifest["references_sha256"] = {k: digest(v) for k, v in self.references().items() if k != "workflow"}
         dump(self.path / "task.json", task.public())
         dump(self.path / "manifest.json", self.manifest)
         (self.path / "trajectory.jsonl").touch()
@@ -70,11 +84,21 @@ class Rollout:
                                  json.dumps(self.engine.tools, sort_keys=True).encode()).hexdigest())
         dump(self.path / "manifest.json", self.manifest)
 
+    def references(self):
+        """Skill documents the policy may read by name: the skill itself plus references/*.md."""
+        skill = ROOT / self.cfg["harness"]["skill"]
+        docs = {"workflow": skill}
+        folder = skill.parent / "references"
+        if folder.is_dir():
+            docs.update((p.stem, p) for p in sorted(folder.glob("*.md")))
+        return docs
+
     def perform(self, name, args):
         available = TOOLS & self.engine.tools.keys()
         if name == "catalog":
             return {"tools": sorted(available), "commands": sorted(COMMANDS),
-                    "helpers": ["schema", "reference"] + (["import_asset"] if self.asset_paths else [])}
+                    "helpers": ["schema", "reference"] + (["import_asset"] if self.asset_paths else []),
+                    "references": sorted(self.references())}
         if name == "import_asset":
             asset = self.asset_paths.get(args.get("name"))
             if asset is None or asset.suffix.lower() not in {".png", ".jpg", ".jpeg"}:
@@ -86,14 +110,19 @@ class Rollout:
                 raise ValueError("Unknown policy tool")
             return self.engine.tools[args["name"]]["inputSchema"]
         if name == "reference":
-            if args != {"name": "workflow"}:
-                raise ValueError("Available reference: workflow")
-            return (ROOT / self.cfg["harness"]["skill"]).read_text()[:4000]
+            docs = self.references()
+            if set(args) != {"name"} or args["name"] not in docs:
+                raise ValueError("Available references: " + ", ".join(sorted(docs)))
+            return skill_text(docs[args["name"]])[:4000]
         if name not in available:
-            raise ValueError("Unknown policy tool. Use catalog.")
+            raise ValueError(unknown_action(name))
         if name in ("execute_command", "describe_command"):
-            if "id" in args or args.get("command") not in COMMANDS:
-                raise ValueError("Use an allowed command ID in command")
+            command = args.get("command")
+            if isinstance(command, str) and command in available:
+                raise ValueError(f"'{command}' is an action, not a command. Call it directly: "
+                                 f'name="{command}", arguments="{{...}}".')
+            if "id" in args or command not in COMMANDS:
+                raise ValueError('Put one of these IDs in "command": ' + ", ".join(sorted(COMMANDS)))
             if name == "execute_command":
                 meta = self.engine.call("describe_command", {"command": args["command"]})
                 jsonschema.validate(args.get("params", {}), meta["schema"])
@@ -110,6 +139,9 @@ class Rollout:
             pending = [result.pop("properties")]
             while pending:
                 node = pending.pop()
+                if isinstance(node, list):  # flat: true returns a list of leaves
+                    pending.extend(node)
+                    continue
                 pending.extend(node.get("children", []))
                 if "path" in node and "value" in node:
                     paths.append(node["path"])

@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: bouncing-ball
+expected_outcome: |
+  One red ellipse on a 512x512, 30 fps, 2 s comp whose position is keyframed through at least two impacts (y goes down, up, down, up, down) and ends resting; export is valid.

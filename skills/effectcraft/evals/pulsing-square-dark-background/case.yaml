@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: pulsing-square-dark-background
+expected_outcome: |
+  A 1080x1080, 60 fps, 4 s comp with a dark navy background (comp background or a bottom solid) and a purple square whose scale grows and shrinks three times; export is valid.

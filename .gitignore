@@ -4,3 +4,7 @@ __pycache__/
 .venv*/
 .runtime/
 runs/
+.env
+*.env
+skills/effectcraft-workspace/
+tasks/lottie660k*/

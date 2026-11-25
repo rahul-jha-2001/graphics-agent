@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: title-over-spinning-star
+expected_outcome: |
+  A 640x360, 24 fps, 3 s comp with a yellow star layer whose rotation is keyframed, and a LAUNCH text layer above it whose opacity animates from 0 up; export is valid.

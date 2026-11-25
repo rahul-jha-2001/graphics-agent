@@ -84,6 +84,22 @@ class EngineTests(unittest.TestCase):
             self.assertIn("Repeated", result["error"])
         self.assertFalse(r.finish("model_finished")["valid"])
 
+    def test_flat_layer_and_skill_references(self):
+        r = Rollout(Task("t", "square"), self.cfg)
+        self.addCleanup(r.engine.close)
+        r.start()
+        act = lambda name, args: json.loads(r.action(name, json.dumps(args)))
+        act("execute_command", {"command": "comp.new", "params": {"width": 64, "height": 64}})
+        act("execute_command", {"command": "layer.newShape", "params": {"name": "Dot", "kind": "ellipse"}})
+        for flat in (True, False):
+            result = act("get_layer", {"layer": "Dot", "flat": flat})
+            self.assertTrue(result["ok"], result)
+            self.assertIn("transform/position", json.dumps(result["result"]))
+        names = act("catalog", {})["result"]["references"]
+        self.assertIn("workflow", names)
+        for name in names:
+            self.assertTrue(act("reference", {"name": name})["ok"], name)
+
     def test_calibration(self):
         result = calibrate(dataset(ROOT / "tasks/eval.jsonl"))
         self.assertEqual(result["cases"][0]["similarity"], 1)

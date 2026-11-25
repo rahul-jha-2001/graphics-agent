@@ -5,8 +5,22 @@ from graphics_agent.common.io import ROOT
 from graphics_agent.inference.client import TOOL, request
 
 
+TRUNCATED = ("Your reply hit the length limit before any tool call. Keep planning short: "
+             "call effectcraft now with the next action.")
+
+
+def skill_text(path):
+    """Skill body without YAML frontmatter, which is metadata for skill loaders, not the policy."""
+    text = path.read_text()
+    if text.startswith("---\n"):
+        end = text.find("\n---\n", 4)
+        if end != -1:
+            text = text[end + 5:].lstrip("\n")
+    return text
+
+
 def system_prompt(cfg):
-    return (ROOT / cfg["harness"]["skill"]).read_text()
+    return skill_text(ROOT / cfg["harness"]["skill"])
 
 
 def bounded_history(messages, byte_budget):
@@ -31,6 +45,7 @@ class Policy:
     def __init__(self, run):
         self.run = run
         self.tokens = 0
+        self.last_finish = None
 
     def query(self, messages):
         options = self.run.cfg["harness"]
@@ -46,8 +61,9 @@ class Policy:
                    "messages": history}
         start = time.monotonic()
         response = request(server, "chat/completions", payload,
-                           timeout=max(1, min(90, options["timeout"] - (start-self.run.started))))
+                           timeout=max(1, min(server.get("request_timeout", 90), options["timeout"] - (start-self.run.started))))
         msg = response["choices"][0]["message"]
+        self.last_finish = response["choices"][0].get("finish_reason")
         usage = response.get("usage", {})
         self.tokens += usage.get("completion_tokens", payload["max_tokens"])
         self.run.record("model", message=msg, usage=usage, finish_reason=response["choices"][0]["finish_reason"],
@@ -71,16 +87,27 @@ def generate(run):
     from minisweagent.agents.default import DefaultAgent
 
     class GraphicsAgent(DefaultAgent):
+        truncations = 0
+
         def execute_actions(self, message):
             calls = message.get("tool_calls") or []
             if not calls:
+                # A reply cut off by the token limit is not a decision to stop; nudge it once or twice.
+                if self.model.last_finish == "length" and self.truncations < 2:
+                    self.truncations += 1
+                    run.record("nudge", reason="length")
+                    return self.add_messages({"role": "user", "content": TRUNCATED})
                 return self.add_messages({"role": "exit", "content": "", "extra": {"exit_status": "model_finished"}})
             for call in calls:
                 try:
                     fn = call["function"]
-                    fields = json.loads(fn["arguments"])
                     if fn["name"] != "effectcraft":
-                        raise ValueError("Use effectcraft")
+                        run.record("tool", name=fn["name"], arguments=fn.get("arguments"),
+                                   observation={"ok": False, "error": "wrong function"}, state_sha256=None, elapsed=0)
+                        raise ValueError(f"You called a function named '{fn['name']}', but the only function is "
+                                         f"'effectcraft'. Call function effectcraft and put \"{fn['name']}\" in its name "
+                                         "field, with the JSON object as a string in its arguments field.")
+                    fields = json.loads(fn["arguments"])
                     result = run.effectcraft(**fields)
                 except (KeyError, ValueError, TypeError) as exc:
                     result = json.dumps({"ok": False, "error": str(exc)[:500]})
